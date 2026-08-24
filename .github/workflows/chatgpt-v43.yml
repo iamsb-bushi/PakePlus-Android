@@ -44,7 +44,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d .v43patch/patch.b64 > /tmp/v43.gz
+          cat .v43patch/part* > /tmp/v43.b64
+          base64 -d /tmp/v43.b64 > /tmp/v43.gz
+          gzip -t /tmp/v43.gz
           gzip -dc /tmp/v43.gz > /tmp/v43.patch
           git apply --check --directory=chatgpt-local-api /tmp/v43.patch
           git apply --directory=chatgpt-local-api /tmp/v43.patch
