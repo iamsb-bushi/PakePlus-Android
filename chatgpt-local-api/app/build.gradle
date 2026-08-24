@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.example.chatgptlocalapi'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.example.chatgptlocalapi'
+        minSdk 26
+        targetSdk 28
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
