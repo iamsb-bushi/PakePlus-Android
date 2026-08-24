@@ -7,6 +7,12 @@ on:
     paths:
       - 'chatgpt-local-api/**'
       - '.github/workflows/chatgpt-local-api.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'chatgpt-local-api/**'
+      - '.github/workflows/chatgpt-local-api.yml'
   workflow_dispatch:
 
 jobs:
