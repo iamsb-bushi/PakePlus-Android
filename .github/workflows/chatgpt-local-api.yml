@@ -78,7 +78,6 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          # packageRelease deliberately skips Google Play's lintVital gate; this APK is sideloaded, not a Play Store submission.
           ./gradlew -p chatgpt-local-api :app:packageRelease :app:assembleDebug --stacktrace
           test -f chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk
           test -f chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
@@ -99,15 +98,27 @@ jobs:
           adb forward tcp:18787 tcp:8787
           curl --fail --retry 8 --retry-delay 2 http://127.0.0.1:18787/health | tee /tmp/health-foreground.json
           curl --fail http://127.0.0.1:18787/debug | tee /tmp/debug-foreground.json
-          grep -q '127.0.0.1:8787' /tmp/health-foreground.json
+          grep -q '"status":"ok"' /tmp/health-foreground.json
+          grep -q '"background_service":true' /tmp/health-foreground.json
+
+          if python3 -c 'import json; print("yes" if json.load(open("/tmp/debug-foreground.json")).get("composer_detected") else "no")' | grep -q yes; then
+            curl --fail --max-time 180 -H 'Content-Type: application/json' -H 'Authorization: Bearer local' \
+              -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"Reply with exactly BRIDGE_E2E_OK"}]}' \
+              http://127.0.0.1:18787/v1/chat/completions | tee /tmp/e2e-chat.json
+            grep -q 'choices' /tmp/e2e-chat.json
+          else
+            echo '{"skipped":true,"reason":"ChatGPT composer unavailable in cloud emulator; manual verification may be required on device"}' > /tmp/e2e-chat.json
+          fi
+
           adb shell input keyevent 3
           sleep 15
           curl --fail http://127.0.0.1:18787/health | tee /tmp/health-background.json
           curl --fail http://127.0.0.1:18787/debug | tee /tmp/debug-background.json
-          grep -q '127.0.0.1:8787' /tmp/health-background.json
+          grep -q '"status":"ok"' /tmp/health-background.json
+          grep -q '"background_service":true' /tmp/health-background.json
           adb shell dumpsys activity services com.example.chatgptlocalapi | tee /tmp/services.txt
           grep -q 'LocalApiService' /tmp/services.txt
-          adb logcat -d -t 500 > /tmp/logcat.txt || true
+          adb logcat -d -t 800 > /tmp/logcat.txt || true
 
       - name: Package local signing utility
         if: always()
@@ -117,8 +128,10 @@ jobs:
           rm -rf /tmp/android-sign-tools
           mkdir -p /tmp/android-sign-tools/lib
           cp "$ANDROID_HOME/build-tools/34.0.0/apksigner" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/zipalign" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/34.0.0/aapt" /tmp/android-sign-tools/
           cp "$ANDROID_HOME/build-tools/34.0.0/lib/apksigner.jar" /tmp/android-sign-tools/lib/
-          chmod +x /tmp/android-sign-tools/apksigner
+          chmod +x /tmp/android-sign-tools/apksigner /tmp/android-sign-tools/zipalign /tmp/android-sign-tools/aapt
           (cd /tmp && zip -qr android-sign-tools-34.zip android-sign-tools)
 
       - name: Upload unsigned release and test evidence
@@ -133,6 +146,7 @@ jobs:
             /tmp/badging.txt
             /tmp/health-foreground.json
             /tmp/debug-foreground.json
+            /tmp/e2e-chat.json
             /tmp/health-background.json
             /tmp/debug-background.json
             /tmp/services.txt
