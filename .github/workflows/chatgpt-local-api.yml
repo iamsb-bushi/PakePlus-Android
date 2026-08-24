@@ -37,11 +37,13 @@ jobs:
           unzip -q /tmp/chat-web-agent-v3.zip -d /tmp/chat-web-agent-v3-src
           mv /tmp/chat-web-agent-v3-src/chat-web-agent-v3 chatgpt-local-api
           cp .v3patch/Diagnostics.java chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/Diagnostics.java
-          chmod +x .v3patch/fix-agent.sh
+          chmod +x .v3patch/fix-agent.sh .v3patch/fix-local-api.sh
           .v3patch/fix-agent.sh
+          .v3patch/fix-local-api.sh
           grep -q '3.0.0-agent' chatgpt-local-api/app/build.gradle
           grep -q 'class AgentProtocol' chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/AgentProtocol.java
           grep -q 'buildChatPrompt(JSONObject req) throws Exception' chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/AgentProtocol.java
+          grep -q 'sendChatJson(OutputStream out, String id, long now, AgentProtocol.ParsedReply reply) throws Exception' chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/LocalApiService.java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
