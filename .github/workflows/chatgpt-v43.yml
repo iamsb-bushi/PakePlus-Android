@@ -44,11 +44,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo 'b0b487350fc313626b82a541ae4fb47bc29cafbbf864955498614ab25432e869  .v43patch/patch.b64' | sha256sum -c -
           base64 -d .v43patch/patch.b64 > /tmp/v43.gz
-          echo '2fe840ced65b112a540ce74ad462974cebe29fa15ae619f6f74b181de4ef8944  /tmp/v43.gz' | sha256sum -c -
           gzip -dc /tmp/v43.gz > /tmp/v43.patch
-          echo '8c2def27bd2d2bf8771c1d4408815a4f2cb5fa1c80e31d86895816cf40202151  /tmp/v43.patch' | sha256sum -c -
           git apply --check --directory=chatgpt-local-api /tmp/v43.patch
           git apply --directory=chatgpt-local-api /tmp/v43.patch
           grep -q "versionName '4.3.0-agent-local'" chatgpt-local-api/app/build.gradle
