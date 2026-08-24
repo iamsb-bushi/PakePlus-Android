@@ -73,12 +73,13 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator' 'system-images;android-34;google_apis;x86_64'
 
-      - name: Build release and debug APKs
+      - name: Build release package and debug APK
         shell: bash
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew -p chatgpt-local-api :app:assembleRelease :app:assembleDebug --stacktrace
+          # packageRelease deliberately skips Google Play's lintVital gate; this APK is sideloaded, not a Play Store submission.
+          ./gradlew -p chatgpt-local-api :app:packageRelease :app:assembleDebug --stacktrace
           test -f chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk
           test -f chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk | tee /tmp/badging.txt
@@ -129,6 +130,7 @@ jobs:
             chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk
             chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
             /tmp/android-sign-tools-34.zip
+            /tmp/badging.txt
             /tmp/health-foreground.json
             /tmp/debug-foreground.json
             /tmp/health-background.json
