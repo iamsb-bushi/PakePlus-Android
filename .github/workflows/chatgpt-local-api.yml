@@ -88,7 +88,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
           echo no | avdmanager create avd --force --name chatwebtest --package 'system-images;android-34;google_apis;x86_64' --device 'pixel_6'
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee /tmp/avds.txt
+          grep -qx 'chatwebtest' /tmp/avds.txt
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
 
           start_emulator() {
             local accel="$1"
@@ -160,6 +165,7 @@ jobs:
             chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
             /tmp/android-sign-tools-34.zip
             /tmp/badging.txt
+            /tmp/avds.txt
             /tmp/health-foreground.json
             /tmp/debug-foreground.json
             /tmp/e2e-chat.json
