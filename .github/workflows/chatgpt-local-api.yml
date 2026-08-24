@@ -89,9 +89,25 @@ jobs:
         run: |
           set -euo pipefail
           echo no | avdmanager create avd --force --name chatwebtest --package 'system-images;android-34;google_apis;x86_64' --device 'pixel_6'
-          nohup "$ANDROID_HOME/emulator/emulator" -avd chatwebtest -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect > /tmp/emulator.log 2>&1 &
-          adb wait-for-device
+
+          start_emulator() {
+            local accel="$1"
+            : > /tmp/emulator.log
+            nohup "$ANDROID_HOME/emulator/emulator" -avd chatwebtest -no-window -no-audio -no-boot-anim -no-snapshot -no-snapshot-save -gpu swiftshader_indirect $accel > /tmp/emulator.log 2>&1 &
+          }
+
+          start_emulator ""
+          if ! timeout 90 adb wait-for-device; then
+            echo 'Initial emulator did not connect to ADB; retrying without hardware acceleration.'
+            cat /tmp/emulator.log || true
+            pkill -f "$ANDROID_HOME/emulator/emulator" || true
+            adb kill-server || true
+            start_emulator "-no-accel"
+            timeout 180 adb wait-for-device
+          fi
+
           timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 4; done'
+          adb shell input keyevent 82 || true
           adb install -r chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
           adb shell am start -W -n com.example.chatgptlocalapi/.MainActivity
           sleep 15
