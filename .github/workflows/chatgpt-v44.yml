@@ -1,0 +1,129 @@
+name: Build and E2E-test Chat Web Agent API v4.4
+
+on:
+  push:
+    branches: [chatgpt-local-api-android]
+    paths: ['.v44patch/**', '.github/workflows/chatgpt-v44.yml']
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore v4.2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .v3src/part* > /tmp/v3.b64
+          base64 -d /tmp/v3.b64 > /tmp/v3.zip
+          rm -rf chatgpt-local-api /tmp/v3src && mkdir -p /tmp/v3src
+          unzip -q /tmp/v3.zip -d /tmp/v3src
+          mv /tmp/v3src/chat-web-agent-v3 chatgpt-local-api
+          cp .v3patch/Diagnostics.java chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/Diagnostics.java
+          chmod +x .v3patch/fix-agent.sh .v3patch/fix-local-api.sh
+          .v3patch/fix-agent.sh
+          .v3patch/fix-local-api.sh
+          cat .v4patch/part* > /tmp/v4.b64
+          base64 -d /tmp/v4.b64 > /tmp/v4.gz
+          gzip -dc /tmp/v4.gz > /tmp/v4.patch
+          git apply -p2 /tmp/v4.patch
+          base64 -d .v41patch/patch.b64 > /tmp/v41.gz
+          gzip -dc /tmp/v41.gz > /tmp/v41.patch
+          git apply --directory=chatgpt-local-api /tmp/v41.patch
+          base64 -d .v42patch/patch.b64 > /tmp/v42.gz
+          gzip -dc /tmp/v42.gz > /tmp/v42.patch
+          git apply --directory=chatgpt-local-api /tmp/v42.patch
+
+      - name: Apply v4.3 native-input patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .v43patch/part* > /tmp/v43.b64
+          base64 -d /tmp/v43.b64 > /tmp/v43.gz
+          gzip -dc /tmp/v43.gz > /tmp/v43.patch
+          git apply --directory=chatgpt-local-api /tmp/v43.patch
+
+      - name: Apply v4.4 Chrome-compatible WebView patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .v44patch/part* > /tmp/v44.b64
+          base64 -d /tmp/v44.b64 > /tmp/v44.gz
+          gzip -t /tmp/v44.gz
+          gzip -dc /tmp/v44.gz > /tmp/v44.patch
+          git apply --check --directory=chatgpt-local-api /tmp/v44.patch
+          git apply --directory=chatgpt-local-api /tmp/v44.patch
+          grep -q "versionName '4.4.0-agent-local'" chatgpt-local-api/app/build.gradle
+          grep -q 'chrome_compatible_webview' chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/WebSessionManager.java
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0' 'emulator' 'system-images;android-34;google_apis;x86_64'
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew -p chatgpt-local-api :app:packageRelease :app:assembleDebug --stacktrace
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk | tee /tmp/badging.txt
+          grep -q "versionCode='8' versionName='4.4.0-agent-local'" /tmp/badging.txt
+
+      - name: Android 34 ChatGPT guest E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/android-avd"; mkdir -p "$ANDROID_AVD_HOME"
+          echo no | avdmanager create avd --force --name chatwebtest --package 'system-images;android-34;google_apis;x86_64' --device pixel_6
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          nohup "$ANDROID_HOME/emulator/emulator" -avd chatwebtest -no-window -no-audio -no-boot-anim -no-snapshot -no-snapshot-save -gpu swiftshader_indirect > /tmp/emulator.log 2>&1 &
+          timeout 120 adb wait-for-device
+          timeout 240 bash -c 'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 4; done'
+          adb install -r chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
+          adb shell am start -n com.example.chatgptlocalapi/.MainActivity
+          sleep 20
+          adb forward tcp:18787 tcp:8787
+          curl --fail --retry 40 --retry-delay 2 http://127.0.0.1:18787/health | tee /tmp/health-fg.json
+          curl -sS http://127.0.0.1:18787/debug | tee /tmp/debug-before.json
+          adb exec-out screencap -p > /tmp/before-screen.png || true
+          CODE="$(curl -sS --max-time 220 -o /tmp/e2e.json -w '%{http_code}' -H 'Content-Type: application/json' -H 'Authorization: Bearer local' -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"Reply with exactly BRIDGE_E2E_OK"}]}' http://127.0.0.1:18787/v1/chat/completions || true)"
+          echo "$CODE" | tee /tmp/e2e-status.txt
+          cat /tmp/e2e.json || true
+          curl -sS http://127.0.0.1:18787/debug | tee /tmp/debug-after.json || true
+          adb exec-out screencap -p > /tmp/e2e-screen.png || true
+          adb logcat -d -t 2500 > /tmp/logcat.txt || true
+          test "$CODE" = 200
+          grep -q 'choices' /tmp/e2e.json
+          grep -q 'BRIDGE_E2E_OK' /tmp/e2e.json
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chat-Web-Agent-API-v4.4-build
+          path: |
+            chatgpt-local-api/app/build/outputs/apk/release/app-release-unsigned.apk
+            chatgpt-local-api/app/build/outputs/apk/debug/app-debug.apk
+            /tmp/badging.txt
+            /tmp/health-fg.json
+            /tmp/debug-before.json
+            /tmp/debug-after.json
+            /tmp/e2e.json
+            /tmp/e2e-status.txt
+            /tmp/before-screen.png
+            /tmp/e2e-screen.png
+            /tmp/logcat.txt
+            /tmp/emulator.log
+          if-no-files-found: warn
