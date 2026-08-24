@@ -6,12 +6,14 @@ on:
       - chatgpt-local-api-android
     paths:
       - '.v3src/**'
+      - '.v3patch/**'
       - '.github/workflows/chatgpt-local-api.yml'
   pull_request:
     branches:
       - main
     paths:
       - '.v3src/**'
+      - '.v3patch/**'
       - '.github/workflows/chatgpt-local-api.yml'
   workflow_dispatch:
 
@@ -34,6 +36,7 @@ jobs:
           mkdir -p /tmp/chat-web-agent-v3-src
           unzip -q /tmp/chat-web-agent-v3.zip -d /tmp/chat-web-agent-v3-src
           mv /tmp/chat-web-agent-v3-src/chat-web-agent-v3 chatgpt-local-api
+          cp .v3patch/Diagnostics.java chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/Diagnostics.java
           grep -q '3.0.0-agent' chatgpt-local-api/app/build.gradle
           grep -q 'class AgentProtocol' chatgpt-local-api/app/src/main/java/com/example/chatgptlocalapi/AgentProtocol.java
 
