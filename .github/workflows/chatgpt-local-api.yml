@@ -122,13 +122,18 @@ jobs:
           grep -q '"status":"ok"' /tmp/health-foreground.json
           grep -q '"background_service":true' /tmp/health-foreground.json
 
+          E2E_STATUS=SKIP
           if python3 -c 'import json; print("yes" if json.load(open("/tmp/debug-foreground.json")).get("composer_detected") else "no")' | grep -q yes; then
-            curl --fail --max-time 180 -H 'Content-Type: application/json' -H 'Authorization: Bearer local' \
+            E2E_STATUS="$(curl -sS --max-time 180 -o /tmp/e2e-chat.json -w '%{http_code}' -H 'Content-Type: application/json' -H 'Authorization: Bearer local' \
               -d '{"model":"chatgpt-web","messages":[{"role":"user","content":"Reply with exactly BRIDGE_E2E_OK"}]}' \
-              http://127.0.0.1:18787/v1/chat/completions | tee /tmp/e2e-chat.json
-            grep -q 'choices' /tmp/e2e-chat.json
+              http://127.0.0.1:18787/v1/chat/completions || true)"
+            echo "$E2E_STATUS" > /tmp/e2e-status.txt
+            curl -sS http://127.0.0.1:18787/debug > /tmp/debug-after-e2e.json || true
+            adb exec-out screencap -p > /tmp/e2e-screen.png || true
           else
             echo '{"skipped":true,"reason":"ChatGPT composer unavailable in cloud emulator; manual verification may be required on device"}' > /tmp/e2e-chat.json
+            echo SKIP > /tmp/e2e-status.txt
+            cp /tmp/debug-foreground.json /tmp/debug-after-e2e.json
           fi
 
           adb shell input keyevent 3
@@ -139,7 +144,17 @@ jobs:
           grep -q '"background_service":true' /tmp/health-background.json
           adb shell dumpsys activity services com.example.chatgptlocalapi | tee /tmp/services.txt
           grep -q 'LocalApiService' /tmp/services.txt
-          adb logcat -d -t 800 > /tmp/logcat.txt || true
+          adb logcat -d -t 1200 > /tmp/logcat.txt || true
+
+          if [ "$E2E_STATUS" != "200" ] && [ "$E2E_STATUS" != "SKIP" ]; then
+            echo "E2E HTTP status: $E2E_STATUS"
+            cat /tmp/e2e-chat.json || true
+            cat /tmp/debug-after-e2e.json || true
+            exit 42
+          fi
+          if [ "$E2E_STATUS" = "200" ]; then
+            grep -q 'choices' /tmp/e2e-chat.json
+          fi
 
       - name: Package local signing utility
         if: always()
@@ -168,7 +183,10 @@ jobs:
             /tmp/avds.txt
             /tmp/health-foreground.json
             /tmp/debug-foreground.json
+            /tmp/e2e-status.txt
             /tmp/e2e-chat.json
+            /tmp/debug-after-e2e.json
+            /tmp/e2e-screen.png
             /tmp/health-background.json
             /tmp/debug-background.json
             /tmp/services.txt
