@@ -7,6 +7,12 @@ on:
     paths:
       - '.v41patch/**'
       - '.github/workflows/chatgpt-v41.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.v41patch/**'
+      - '.github/workflows/chatgpt-v41.yml'
   workflow_dispatch:
 
 jobs:
